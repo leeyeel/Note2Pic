@@ -10,10 +10,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "noEmitOnError": true,
-    "esModuleInterop": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "types": ["node", "canvas"]
   },
-  "include": ["src/*.ts"],
+  "include": ["src/*.ts", "mcp/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
 
