@@ -18,7 +18,7 @@ export interface TemplatesConfig {
 export interface OutputConfig {
   directory: string;
   format: OutputFormat;
-  quality: number; // 0–1
+  quality: number;
 }
 
 export interface BaseTextStyle {
@@ -50,14 +50,8 @@ type PagesArray =
   | [BaseTextStyle, BaseTextStyle, BaseTextStyle]
   | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle]
   | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle]
-  | [
-      BaseTextStyle,
-      BaseTextStyle,
-      BaseTextStyle,
-      BaseTextStyle,
-      BaseTextStyle,
-      BaseTextStyle
-    ];
+  | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle]
+  | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle];
 
 export interface OverlayConfig {
   enable: boolean;
@@ -69,51 +63,7 @@ export interface OverlayConfig {
   alphaRange: [number, number];
 }
 
-type OverlayArray =
-  | []
-  | [OverlayConfig]
-  | [OverlayConfig, OverlayConfig]
-  | [OverlayConfig, OverlayConfig, OverlayConfig]
-  | [OverlayConfig, OverlayConfig, OverlayConfig, OverlayConfig]
-  | [OverlayConfig, OverlayConfig, OverlayConfig, OverlayConfig, OverlayConfig]
-  | [
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig
-    ]
-  | [
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig
-    ]
-  | [
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig
-    ]
-  | [
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig,
-      OverlayConfig
-    ];
+type OverlayArray = | [] | [OverlayConfig]
 
 export interface ImageConfig {
   width: number;
@@ -128,6 +78,32 @@ export interface AppConfig {
   pages: PagesArray;
   overlay: OverlayArray;
   image: ImageConfig;
+}
+
+export const pageTemplate = {
+  x: 100,
+  y: 500,
+  width: 1080,
+  height: 1350,
+  fontSize: 36,
+  lineHeight: 45,
+  color: "#000000",
+  fontFamily: "Yozai-Regular",
+  textAlign: "left" as const,
+  maxLines: 10,
+  enableInlineMarkup: true,
+  charsPerLine: 24,
+  text:''
+};
+
+export const overlayTemplate:OverlayConfig = {
+  enable: true,
+  count: 2,
+  positions: [{}, {}],
+  randomize: true,
+  scaleRange: [0.1, 0.2],
+  rotationRange: [-15, 15],
+  alphaRange: [0.75, 1.0],
 }
 
 const config = {
@@ -168,7 +144,7 @@ const config = {
       color: "#000000",
       fontFamily: "Yozai-Regular",
       textAlign: "left",
-      text: "hi,",
+      text: "",
     },
     {
       x: 200,
@@ -191,33 +167,17 @@ const config = {
   ],
 
   pages: [
-    {
-      x: 100,
-      y: 500,
-      width: 1080,
-      height: 1350,
-      fontSize: 32,
-      lineHeight: 45,
-      color: "#000000",
-      fontFamily: "Yozai-Regular",
-      textAlign: "left",
-      maxLines: 10,
-      enableInlineMarkup: true,
-      charsPerLine: 24,
-    },
-    // ... up to 6 items
+    { ...pageTemplate },
+    { ...pageTemplate },
+    { ...pageTemplate },
+    { ...pageTemplate },
+    { ...pageTemplate },
+    { ...pageTemplate },
+    { ...pageTemplate },
   ],
 
   overlay: [
-    {
-      enable: true,
-      count: 2,
-      positions: [{}, {}],
-      randomize: true,
-      scaleRange: [0.1, 1.2],
-      rotationRange: [-15, 15],
-      alphaRange: [0.75, 1.0],
-    },
+    { ...overlayTemplate},
   ],
 
   image: {

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // note2pic-mcp.ts
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
@@ -38,8 +37,8 @@ type ToolOutput = z.infer<typeof ToolOutputSchema>;
 const MinimalRenderInputSchema = z.object({
     titleDir: z.string().min(1, "titleDir 不能为空"),
     templateName: z.string().optional().default("default"),
-    title: z.array(z.string()).min(1).max(3),
-    pages: z.array(z.string()).min(1).max(20),
+    title: z.array(z.object({text: z.string()}).strict()).min(1).max(3),
+    pages: z.array(z.object({text: z.string()}).strict()).min(1).max(7),
     disableOverlay: z.boolean().optional(),
 }).strict();
 
@@ -230,29 +229,19 @@ export function createMCPServer() {
     return { tools };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request,extra) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    console.error(extra)
     if (name === ToolName.GENERATE_SIMPLE) {
       const input = MinimalRenderInputSchema.parse(args);
-      const {
-        titleDir,
-        templateName = "default",
-          title,
-        pages,
-        disableOverlay,
-      } = input;
-
+      const {titleDir, templateName = "default", title, pages, disableOverlay} = input;
       const request: any = {
-        templateName,
         titleDir,
-        title: {
-          lines: title,
+        templateName,
+        overrides: {
+          title,
+          pages,
+          ...(disableOverlay ? { overlay: [] } : {}),
         },
-        pages: pages.map((txt) => ({
-          text: txt,
-        })),
-        ...(disableOverlay ? { overlay: [] } : {}),
       };
 
       const result = await renderAll(request);

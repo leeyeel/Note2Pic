@@ -51,17 +51,6 @@ interface TemplatesConfig {
   defaultName: string;
 }
 
-interface OutputConfig {
-  directory: string;
-  format: OutputFormat;
-  quality: number;
-}
-
-interface ImageConfig {
-  width: number;
-  height: number;
-}
-
 export interface RenderRequest {
   titleDir: string;
 
@@ -74,12 +63,12 @@ export interface RenderRequest {
       overlay?: Partial<OverlayConfig>[];
     };
 
-  titleTexts?: string[]; // length <= 3
+  titleTexts?: string[];
 
-  pages?: string[]; // length <= 6
+  pages?: string[]; 
 
   overlayCover?: Partial<OverlayConfig>[];
-  overlayPages?: Partial<OverlayConfig>[][]; // 每页一组
+  overlayPages?: Partial<OverlayConfig>[][];
   overlayEnding?: Partial<OverlayConfig>[];
 }
 
@@ -114,12 +103,12 @@ function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
       if (merged.title[i]) Object.assign(merged.title[i], partial);
     });
   }
-  if (req.overrides?.pages && Array.isArray(merged.pages)) {
+  if (req.overrides?.pages && Array.isArray(req.overrides.pages)) {
     req.overrides.pages.forEach((partial, i) => {
       if (merged.pages[i]) Object.assign(merged.pages[i], partial);
     });
   }
-  if (req.overrides?.overlay && Array.isArray(merged.overlay)) {
+  if (req.overrides?.overlay && Array.isArray(req.overrides.overlay)) {
     req.overrides.overlay.forEach((partial, i) => {
       if (merged.overlay[i]) Object.assign(merged.overlay[i], partial);
     });
@@ -133,7 +122,7 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
   let i = 0;
   let visible = 0;
   let buf = "";
-  const openStack: string[] = []; // 存储原始打开标签字符串，如 "<c:#E53935>" "<s:48>"
+  const openStack: string[] = [];
 
   const isOpenTag = (tag: string) => tag.startsWith("c:") || tag.startsWith("s:");
   const isCloseTag = (tag: string) => tag === "/c" || tag === "/s";
@@ -145,13 +134,11 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
   const openTokenToTag = (openTok: string) => `<${openTok}>`;
 
   const flushLine = (force = false) => {
-    // 收尾：若需要换行（可见数达到上限或遇到 \n），在行尾补齐所有未闭合标签
     if (buf.length > 0 || force) {
       for (let k = openStack.length - 1; k >= 0; k--) {
         buf += closeTokenFor(openStack[k]);
       }
       lines.push(buf);
-      // 下一行恢复打开标签
       buf = openStack.map(openTok => openTokenToTag(openTok)).join("");
       visible = 0;
     }
@@ -160,7 +147,6 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
   while (i < content.length) {
     const ch = content[i];
 
-    // 强制换行
     if (ch === "\n") {
       // 当前行收尾闭合
       flushLine(true);
@@ -168,22 +154,18 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
       continue;
     }
 
-    // 尝试解析标签
     if (ch === "<") {
       const closeIdx = content.indexOf(">", i);
       if (closeIdx !== -1) {
         const rawTag = content.slice(i + 1, closeIdx).trim(); // 不含尖括号
         if (isOpenTag(rawTag)) {
-          // 添加打开标签并入栈（标签本身不计入可见字符数）
           buf += `<${rawTag}>`;
           openStack.push(rawTag);
           i = closeIdx + 1;
           continue;
         } else if (isCloseTag(rawTag)) {
-          // 添加关闭标签并出栈
           buf += `<${rawTag}>`;
           const expected = rawTag === "/c" ? "c:" : "s:";
-          // 从栈顶弹出匹配类型的打开标签
           for (let k = openStack.length - 1; k >= 0; k--) {
             if (openStack[k].startsWith(expected)) {
               openStack.splice(k, 1);
@@ -193,10 +175,7 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
           i = closeIdx + 1;
           continue;
         }
-        // 不是我们支持的标签，当作普通文本处理（保留原样）
-        // 为避免将 '<xxx>' 拆断，整体作为文本加入，并按其可见字符长度计数（可选：这里按长度计数）
         const token = content.slice(i, closeIdx + 1);
-        // 若下一次加入会超限，则先换行（并闭合），再在新行恢复，再加入 token
         if (visible + token.length > charsPerLine) {
           flushLine();
         }
@@ -205,10 +184,8 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
         i = closeIdx + 1;
         continue;
       }
-      // 找不到 '>'，按普通字符处理
     }
 
-    // 普通字符：将可能导致超限的字符放入前先判断
     if (visible + 1 > charsPerLine) {
       flushLine();
     }
@@ -217,9 +194,7 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
     i++;
   }
 
-  // 收尾：最后一行补齐
   if (buf.length > 0 || openStack.length > 0) {
-    // 即使最后为空，但仍有打开标签，也需要补齐闭合再推入
     for (let k = openStack.length - 1; k >= 0; k--) {
       buf += closeTokenFor(openStack[k]);
     }
@@ -248,7 +223,6 @@ function parseInline(text: string, base: { color: string; fontSize: number; }): 
       const closeIdx = text.indexOf(">", i);
       if (closeIdx === -1) { buf += text[i++]; continue; }
       const tag = text.slice(i + 1, closeIdx).trim();
-      // closing?
       if (tag === "/c" || tag === "/s") {
         pushBuf();
         const prev = stack.pop();
@@ -350,6 +324,30 @@ function registerAllFonts(appcfg: AppConfig) {
     });
 }
 
+function chooseAssets(pool: string[], n: number, preferDistinct = true): string[] {
+  if (n <= 0 || pool.length === 0) return [];
+  if (!preferDistinct) {
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) out.push(pool[i % pool.length]);
+    return out;
+  }
+  const shuffled = pool.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const k = Math.min(n, shuffled.length);
+  const out = shuffled.slice(0, k);
+  while (out.length < n) out.push(shuffled[out.length % shuffled.length]); // 池子不够 → 循环补齐
+  return out;
+}
+
+function randBetween(a: number, b: number) {
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  return lo + Math.random() * (hi - lo);
+}
+
 async function drawOverlays(
   ctx: CanvasRenderingContext2D,
   canvasW: number,
@@ -358,41 +356,58 @@ async function drawOverlays(
   assetsPool: string[]
 ) {
   if (!layers || layers.length === 0) return;
-  let assetCursor = 0;
 
   for (const layer of layers) {
     if (!layer?.enable) continue;
-    for (let i = 0; i < layer.count; i++) {
-      const pos = layer.positions[i] ?? {};
-      // 选择素材
+
+    const count = Math.max(0, Math.floor(layer.count ?? 0));
+    if (count === 0) continue;
+
+
+    const chosenAssets = chooseAssets(assetsPool, count, /*preferDistinct*/ true);
+
+    for (let i = 0; i < count; i++) {
+      const pos = (layer.positions && layer.positions[i]) ? layer.positions[i] as any : {};
+
       let assetPath: string | undefined;
       if (pos.asset) {
-        const abs = assetsPool.find(a => path.basename(a) === pos.asset);
-        assetPath = abs || assetsPool[assetCursor % assetsPool.length];
-      } else {
-        assetPath = assetsPool[assetCursor % assetsPool.length];
+        const base = String(pos.asset).trim().toLowerCase();
+        assetPath = assetsPool.find(p => p.toLowerCase().endsWith("/" + base) || p.toLowerCase().endsWith("\\" + base));
       }
-      assetCursor++;
+      if (!assetPath) assetPath = chosenAssets[i];
 
       if (!assetPath) continue;
+
       const img = await loadImage(assetPath);
 
-      // 位置/缩放/旋转/透明度
-      const scale = pos.scale ?? (layer.randomize ? pickRandom(layer.scaleRange[0], layer.scaleRange[1]) : 1);
-      const rotation = pos.rotation ?? (layer.randomize ? pickRandom(layer.rotationRange[0], layer.rotationRange[1]) : 0);
-      const alpha = pos.alpha ?? (layer.randomize ? pickRandom(layer.alphaRange[0], layer.alphaRange[1]) : 1);
+      // 计算缩放/旋转/透明度
+      const scale = (pos.scale ?? (layer.randomize ? randBetween(layer.scaleRange[0], layer.scaleRange[1]) : 1));
+      const rotDeg = (pos.rotation ?? (layer.randomize ? randBetween(layer.rotationRange[0], layer.rotationRange[1]) : 0));
+      const alpha = (pos.alpha ?? (layer.randomize ? randBetween(layer.alphaRange[0], layer.alphaRange[1]) : 1));
 
       const w = img.width * scale;
       const h = img.height * scale;
 
-      const x = pos.x ?? (layer.randomize ? pickRandom(0, canvasW - w) : 0);
-      const y = pos.y ?? (layer.randomize ? pickRandom(0, canvasH - h) : 0);
+      // 计算位置
+      let x = pos.x;
+      let y = pos.y;
+      if (typeof x !== "number" || typeof y !== "number") {
+        if (layer.randomize) {
+          x = randBetween(0, Math.max(0, canvasW - w));
+          y = randBetween(0, Math.max(0, canvasH - h));
+        } else {
+          x = x ?? 0;
+          y = y ?? 0;
+        }
+      }
 
       ctx.save();
       ctx.globalAlpha = alpha;
-      // 以左上角为旋转中心（简单做法），可改为中心点旋转
+
+      // 以左上角为基点的简单旋转；如需以中心旋转可改为 translate(x+w/2, y+h/2) + draw (-w/2,-h/2)
       ctx.translate(x, y);
-      ctx.rotate(degToRad(rotation));
+      ctx.rotate(rotDeg * Math.PI / 180);
+
       ctx.drawImage(img, 0, 0, w, h);
       ctx.restore();
     }
@@ -439,6 +454,7 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
   const W = appcfg.image.width;
   const H = appcfg.image.height;
 
+  //title
   {
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext("2d");
@@ -448,12 +464,12 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
     const layers = resolveOverlay(appcfg.overlay, request.overlayCover);
     await drawOverlays(ctx, W, H, layers, assets);
 
-    const titleTexts = request.titleTexts ?? [];
-    for (let i = 0; i < appcfg.title.length && i < titleTexts.length; i++) {
+    const titleTexts = appcfg.title;
+    for (let i = 0;  i < titleTexts.length; i++) {
       const t = appcfg.title[i];
       if (!t) continue;
       const lineHeight = t.lineHeight ?? Math.round((t.fontSize ?? 36) * 1.4);
-      drawRichBlock(ctx, titleTexts[i], {
+      drawRichBlock(ctx, t.text || "", {
         x: t.x,
         y: t.y,
         fontFamily: t.fontFamily,
@@ -471,37 +487,34 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
     await fs.writeFile(coverOut, canvas.toBuffer("image/png"));
   }
 
+  //text
   const textOutputs: string[] = [];
   {
-    const pages = request.pages ?? [];
+    const pages = appcfg.pages;
     const pageCount = Math.max(1, Math.min(pages.length || 1, 6));
     for (let p = 0; p < pageCount; p++) {
+      const ps = appcfg.pages[p];
+      if (!ps.text) continue;
       const canvas = createCanvas(W, H);
       const ctx = canvas.getContext("2d");
-
       ctx.drawImage(textBase, 0, 0, W, H);
-
       const pageOver = request.overlayPages?.[p];
       const layers = resolveOverlay(appcfg.overlay, pageOver);
       await drawOverlays(ctx, W, H, layers, assets);
 
-      const ps = appcfg.pages[p] ?? appcfg.pages[0];
-      const content = pages[p] ?? "";
-      if (ps) {
-        const lineHeight = ps.lineHeight ?? Math.round((ps.fontSize ?? 32) * 1.4);
-        drawRichBlock(ctx, content, {
-          x: ps.x,
-          y: ps.y,
-          fontFamily: ps.fontFamily,
-          fontSize: ps.fontSize ?? 32,
-          lineHeight,
-          textAlign: ps.textAlign,
-          color: ps.color ?? "#000000",
-          maxLines: ps.maxLines,
-          charsPerLine: ps.charsPerLine ?? 24,
-          width: ps.width,
-        });
-      }
+      const lineHeight = ps.lineHeight ?? Math.round((ps.fontSize ?? 32) * 1.4);
+      drawRichBlock(ctx, ps.text, {
+        x: ps.x,
+        y: ps.y,
+        fontFamily: ps.fontFamily,
+        fontSize: ps.fontSize ?? 32,
+        lineHeight,
+        textAlign: ps.textAlign,
+        color: ps.color ?? "#000000",
+        maxLines: ps.maxLines,
+        charsPerLine: ps.charsPerLine ?? 24,
+        width: ps.width,
+      });
 
       const out = path.join(outDir, `text_${p + 1}.png`);
       await fs.writeFile(out, canvas.toBuffer("image/png"));
@@ -509,6 +522,7 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
     }
   }
 
+  //ending
   {
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext("2d");
