@@ -13,7 +13,7 @@
     "esModuleInterop": false,
     "types": ["node", "canvas"]
   },
-  "include": ["src/config.ts", "src/render.ts", "src/app.ts"],
+  "include": ["src/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
 
