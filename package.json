@@ -1,0 +1,33 @@
+{
+  "name": "note2pic-renderer",
+  "version": "1.0.0",
+  "description": "Simple HTTP service that composes images and text using node-canvas based on template and config.ts",
+  "main": "dist/app.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/app.js",
+    "dev": "ts-node-dev --respawn --transpile-only app.ts",
+    "clean": "rimraf dist"
+  },
+  "keywords": [
+    "canvas",
+    "image-composition",
+    "typescript",
+    "renderer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "express": "^5.1.0",
+    "nodemon": "^3.0.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "outDir": "dist",
+    "rootDir": ".",
+    "moduleResolution": "node",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmitOnError": true,
+    "esModuleInterop": false,
+    "types": ["node", "canvas"]
+  },
+  "include": ["src/config.ts", "src/render.ts", "src/app.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+
