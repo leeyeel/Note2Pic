@@ -23,16 +23,19 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-
+import path from "node:path";
+import crypto from "node:crypto";
+import config from "../src/config";
 import { renderAll } from "../src/render";
+
+const PROJECT_ROOT = path.resolve(__dirname, "../../");
+export const outputBase = path.isAbsolute(config.output.directory)
+  ? config.output.directory
+  : path.resolve(PROJECT_ROOT, config.output.directory);
+export const PUBLIC_BASE = process.env.PUBLIC_BASE ?? `http://localhost:${process.env.PORT ?? 3001}`;
 
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
-const ToolOutputSchema = ToolSchema.shape.outputSchema;
-type ToolOutput = z.infer<typeof ToolOutputSchema>;
 
 const MinimalRenderInputSchema = z.object({
     titleDir: z.string().min(1, "titleDir 不能为空"),
@@ -85,7 +88,7 @@ const AdvancedRenderInputSchema = z.object({
 }).strict();
 
 const ReadFileSchema = z.object({
-    filename: z.string().min(1, "filename 不能为空"), // 相对 output/ 的路径
+    filename: z.string().min(1, "filename 不能为空"),
     encoding: z.enum(["base64", "utf8"]).optional().default("base64"),
 }).strict();
 
@@ -111,6 +114,14 @@ enum ToolName {
     DOCS = "docs",
 }
 
+function toPublicUrl(absPath: string) {
+  const rel = path.relative(outputBase, absPath).split(path.sep).join("/");
+  return `${PUBLIC_BASE}/outputs/${encodeURI(rel)}`;
+}
+function sha256(buf: Buffer) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
 export function createMCPServer() {
   const server = new Server(
   { 
@@ -127,58 +138,11 @@ export function createMCPServer() {
       },
   });
 
-  const ALL_RESOURCES: Resource[] = Array.from({ length: 100 }, (_, i) => {
-    const uri = `test://static/resource/${i + 1}`;
-      if (i % 2 === 0) {
-      return {
-        uri,
-        name: `Resource ${i + 1}`,
-        mimeType: "text/plain",
-        text: `Resource ${i + 1}: This is a plaintext resource`,
-      };
-    } else {
-      const buffer = Buffer.from(`Resource ${i + 1}: This is a base64 blob`);
-      return {
-        uri,
-        name: `Resource ${i + 1}`,
-        mimeType: "application/octet-stream",
-        blob: buffer.toString("base64"),
-      };
-    }
-  });
-
-  const PAGE_SIZE = 10;
-
-  server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-    const cursor = request.params?.cursor;
-    let startIndex = 0;
-
-    if (cursor) {
-      const decodedCursor = parseInt(atob(cursor), 10);
-      if (!isNaN(decodedCursor)) {
-        startIndex = decodedCursor;
-      }
-    }
-
-    const endIndex = Math.min(startIndex + PAGE_SIZE, ALL_RESOURCES.length);
-    const resources = ALL_RESOURCES.slice(startIndex, endIndex);
-
-    let nextCursor: string | undefined;
-    if (endIndex < ALL_RESOURCES.length) {
-      nextCursor = btoa(endIndex.toString());
-    }
-
-    return {
-      resources,
-      nextCursor,
-    };
-  });
-
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const tools: Tool[] = [
       {
         name: ToolName.GENERATE_SIMPLE,
-        description: "最简渲染入口：只传少量参数（titleDir、title[≤3]、pages[≤20]、可选 templateName/disableOverlay），其余走 config 默认。",
+        description: "最简渲染入口：只传少量参数（titleDir、title[≤3]、pages[≤7]、可选 templateName/disableOverlay），其余走 config 默认。",
         inputSchema: zodToJsonSchema(MinimalRenderInputSchema) as ToolInput,
       },
 
@@ -245,8 +209,27 @@ export function createMCPServer() {
       };
 
       const result = await renderAll(request);
+      const files = [
+        { kind: "cover",  abs: result.cover },
+        ...result.texts.map((p, i) => ({ kind: `text_${i+1}`, abs: p })),
+          { kind: "ending", abs: result.ending },
+      ];
+      const outputs = files.map(f => ({
+        kind:     f.kind,
+        filename: path.basename(f.abs),
+        url:      toPublicUrl(f.abs),
+      }));
+
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: "text", text: "✅ Image(s) generated. Download URLs are ready." },
+          { type: "text", text: outputs.map(o => `${o.kind}: ${o.url}`).join("\n") }
+        ],
+        metadata: {
+          outputs,
+          outputDir: result.outputDir,
+          publicBase: PUBLIC_BASE,
+        },
       };
     }
 
@@ -255,4 +238,3 @@ export function createMCPServer() {
 
   return server;
 }
-

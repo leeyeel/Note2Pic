@@ -2,26 +2,28 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { InMemoryEventStore } from '@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js';
 import express, { Request, Response } from "express";
-import { createMCPServer} from "./note2pic-mcp.js";
+import { outputBase, PUBLIC_BASE, createMCPServer} from "./note2pic-mcp.js";
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 
 console.error('Starting Streamable HTTP server...');
 
 const app = express();
+
 app.use(cors({
-    "origin": "*",
-    "methods": "GET,POST,DELETE",
-    "preflightContinue": false,
-    "optionsSuccessStatus": 204,
-    "exposedHeaders": [
-        'mcp-session-id',
-        'last-event-id',
-        'mcp-protocol-version'
-    ]
+  "origin": "*",
+  "methods": "GET,POST,DELETE, OPTIONS",
+  "preflightContinue": false,
+  "optionsSuccessStatus": 204,
+  "exposedHeaders": [
+    'mcp-session-id',
+    'last-event-id',
+    'mcp-protocol-version'
+  ]
 }));
 
 const transports: Map<string, StreamableHTTPServerTransport> = new Map<string, StreamableHTTPServerTransport>();
+const server =   createMCPServer();
 
 app.post('/mcp', async (req: Request, res: Response) => {
   console.error('Received MCP POST request');
@@ -31,12 +33,10 @@ app.post('/mcp', async (req: Request, res: Response) => {
     if (sessionId && transports.has(sessionId)) {
       transport = transports.get(sessionId)!;
     } else if (!sessionId) {
-
-      const server =   createMCPServer();
       const eventStore = new InMemoryEventStore();
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
-        eventStore, // Enable resumability
+        eventStore,
         onsessioninitialized: (sessionId: string) => {
           console.error(`Session initialized with ID: ${sessionId}`);
           transports.set(sessionId, transport);
@@ -45,7 +45,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
       await server.connect(transport);
       await transport.handleRequest(req, res);
 
-        return;
+      return;
     } else {
       res.status(400).json({
         jsonrpc: '2.0',
@@ -135,6 +135,19 @@ app.delete('/mcp', async (req: Request, res: Response) => {
     }
   }
 });
+
+app.use(
+  "/outputs",
+  express.static(outputBase, {
+    dotfiles: "deny",
+    etag: true,
+    maxAge: "7d",
+    fallthrough: false,
+    setHeaders(res, filePath) {
+    },
+  })
+);
+app.get("/healthz", (_, res) => res.json({ ok: true, publicBase: PUBLIC_BASE }));
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

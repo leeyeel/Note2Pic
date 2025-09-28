@@ -9,7 +9,6 @@ const PROJECT_ROOT = path.resolve(__dirname, "../../");
 console.log(PROJECT_ROOT)
 
 type TextAlign = "left" | "center" | "right" | "justify";
-type OutputFormat = "png" | "jpg" | "jpeg" | "webp";
 
 interface BaseTextStyle {
   x: number;
@@ -83,14 +82,6 @@ function ensureDirSync(dir: string) {
   if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
 }
 
-function pickRandom(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-
-function degToRad(d: number) {
-  return (d * Math.PI) / 180;
-}
-
 function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
   const merged: AppConfig = structuredClone(base);
 
@@ -148,7 +139,6 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
     const ch = content[i];
 
     if (ch === "\n") {
-      // 当前行收尾闭合
       flushLine(true);
       i++;
       continue;
@@ -157,7 +147,7 @@ function splitIntoInlineSafeLines(content: string, charsPerLine: number): string
     if (ch === "<") {
       const closeIdx = content.indexOf(">", i);
       if (closeIdx !== -1) {
-        const rawTag = content.slice(i + 1, closeIdx).trim(); // 不含尖括号
+        const rawTag = content.slice(i + 1, closeIdx).trim();
         if (isOpenTag(rawTag)) {
           buf += `<${rawTag}>`;
           openStack.push(rawTag);
@@ -380,7 +370,6 @@ async function drawOverlays(
 
       const img = await loadImage(assetPath);
 
-      // 计算缩放/旋转/透明度
       const scale = (pos.scale ?? (layer.randomize ? randBetween(layer.scaleRange[0], layer.scaleRange[1]) : 1));
       const rotDeg = (pos.rotation ?? (layer.randomize ? randBetween(layer.rotationRange[0], layer.rotationRange[1]) : 0));
       const alpha = (pos.alpha ?? (layer.randomize ? randBetween(layer.alphaRange[0], layer.alphaRange[1]) : 1));
@@ -388,7 +377,6 @@ async function drawOverlays(
       const w = img.width * scale;
       const h = img.height * scale;
 
-      // 计算位置
       let x = pos.x;
       let y = pos.y;
       if (typeof x !== "number" || typeof y !== "number") {
@@ -404,7 +392,6 @@ async function drawOverlays(
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // 以左上角为基点的简单旋转；如需以中心旋转可改为 translate(x+w/2, y+h/2) + draw (-w/2,-h/2)
       ctx.translate(x, y);
       ctx.rotate(rotDeg * Math.PI / 180);
 

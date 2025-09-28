@@ -184,13 +184,6 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  /* ---------- 预览图片（安全） ----------
-     GET /preview?scope=template|output&path=<relative_path>
-     例如：
-       /preview?scope=template&path=default/cover.png
-       /preview?scope=template&path=default/assets/sticker1.png
-       /preview?scope=output&path=测试标题/cover.png
-  */
   if (req.method === "GET" && parsed.pathname === "/preview") {
     try {
       const scope = (parsed.query["scope"] as string) || "output";
