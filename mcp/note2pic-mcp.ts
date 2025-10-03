@@ -44,8 +44,8 @@ const PageSchema = z.object({
 const MinimalRenderInputSchema = z.object({
     titleDir: z.string().min(1, "titleDir 不能为空,会作为输出图片的目录名,不要有空格"),
     templateName: z.string().optional().default("default"),
-    title: z.array(TitleSchema.strict()).min(3).max(3),
-    pages: z.array(PageSchema).min(6).max(7),
+    title: z.array(TitleSchema.strict()).min(1).max(1),
+    pages: z.array(PageSchema).min(1).max(7),
     disableOverlay: z.boolean().optional(),
 }).strict();
 
