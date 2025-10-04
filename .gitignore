@@ -4,3 +4,5 @@ package-lock.json
 template
 !template/README
 output/
+*.tar
+*.tar.gz

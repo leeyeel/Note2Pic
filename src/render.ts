@@ -105,6 +105,20 @@ function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
     });
   }
 
+  if (req.titleTexts && Array.isArray(merged.title)) {
+    req.titleTexts.forEach((txt, i) => {
+      if (!merged.title[i]) return;
+      merged.title[i].text = (txt ?? "").toString();
+    });
+  }
+
+  if (req.pages && Array.isArray(merged.pages)) {
+    req.pages.forEach((txt, i) => {
+      if (!merged.pages[i]) return;
+      merged.pages[i].text = (txt ?? "").toString();
+    });
+  }
+
   return merged;
 }
 

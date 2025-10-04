@@ -44,7 +44,7 @@ const PageSchema = z.object({
 const MinimalRenderInputSchema = z.object({
     titleDir: z.string().min(1, "titleDir 不能为空,会作为输出图片的目录名,不要有空格"),
     templateName: z.string().optional().default("default"),
-    title: z.array(TitleSchema.strict()).min(1).max(1),
+    title: TitleSchema.strict(),
     pages: z.array(PageSchema).min(1).max(7),
     disableOverlay: z.boolean().optional(),
 }).strict();
@@ -129,7 +129,7 @@ export function createMCPServer() {
     const tools: Tool[] = [
       {
         name: ToolName.GENERATE_SIMPLE,
-        description: "生成适配小红书（目标用户：宝妈）的图片海报：三段式标题（1≤10汉字、2≤7汉字、3≤10汉字，重点在第二段）+ 正文自动换行（每行≤24汉字, 每页最多10行，总共7页内容），支持内联样式高亮关键词（颜色/字号）。返回HTTP下载链接。",
+        description: "生成适配小红书（目标用户：宝妈）的图片海报：三段式标题（1≤10汉字、2≤7汉字、3≤10汉字，重点在第二段）+ 正文自动换行（每行≤24汉字, 每页最多10行，总共7页内容），标题及征文均支持内联样式高亮关键词（颜色/字号）。返回HTTP下载链接。",
         inputSchema: zodToJsonSchema(MinimalRenderInputSchema) as ToolInput,
       },
       {
@@ -146,16 +146,23 @@ export function createMCPServer() {
     if (name === ToolName.GENERATE_SIMPLE) {
       const input = MinimalRenderInputSchema.parse(args);
       const {titleDir, templateName = "default", title, pages, disableOverlay} = input;
+      const titleTexts = [
+        title.line1 ?? "",
+        title.line2 ?? "",
+        title.line3 ?? "",
+      ];
+      const pageTexts = pages.map(p => p.text ?? "");
       const request: any = {
         titleDir,
         templateName,
-        overrides: {
-          title,
-          pages,
-          ...(disableOverlay ? { overlay: [] } : {}),
-        },
+        titleTexts, 
+        pages: pageTexts,
       };
-
+      if (disableOverlay === true) {
+        request.overlayCover = [];
+        request.overlayPages = [];
+        request.overlayEnding = [];
+      }
       const result = await renderAll(request);
       const files = [
         { kind: "cover",  abs: result.cover },
