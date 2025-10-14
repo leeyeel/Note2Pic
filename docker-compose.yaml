@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: note2pic-mcp:latest
+    image: note2pic-mcp:v1.0.2
     container_name: note2pic-mcp
     environment:
       PORT: "${PORT:-7810}"

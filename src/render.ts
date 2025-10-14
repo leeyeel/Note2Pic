@@ -274,11 +274,20 @@ function parseInline(text: string, base: { color: string; fontSize: number; }): 
   return spans;
 }
 
+function normalizeNewlines(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(/\r\n/g, "\n")  // CRLF -> LF
+    .replace(/\r/g, "\n")    // CR -> LF
+    .replace(/\\n/g, "\n");  // 字面量 \n -> 真换行
+}
+
 function drawRichBlock(
   ctx: CanvasRenderingContext2D,
   content: string,
   base: Required<Pick<BaseTextStyle, "x"|"y"|"fontFamily"|"fontSize"|"lineHeight"|"textAlign"|"color">> & { maxLines?: number; charsPerLine?: number; width?: number; }
 ) {
+  content = normalizeNewlines(content);
   const charsPerLine = base.charsPerLine ?? 20;
   const lineHeight = base.lineHeight ?? Math.round(base.fontSize * 1.8);
 
