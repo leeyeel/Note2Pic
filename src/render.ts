@@ -82,6 +82,24 @@ function ensureDirSync(dir: string) {
   if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
 }
 
+function applyEnvOverrides(cfg: AppConfig): AppConfig {
+  const updated = { ...cfg };
+
+  const pageFontEnv = process.env.PAGE_FONT_SIZE;
+  if (pageFontEnv && !isNaN(Number(pageFontEnv))) {
+    updated.pages = updated.pages.map(p => ({ ...p, fontSize: Number(pageFontEnv) })) as typeof updated.pages;
+  }
+
+  const titleFontEnv = process.env.TITLE_LINE1_FONT_SIZE;
+  if (titleFontEnv && !isNaN(Number(titleFontEnv))) {
+    if (updated.title.length > 2 && updated.title[1]) {
+      updated.title[1].fontSize =  Number(titleFontEnv) ;
+    }
+  }
+
+  return updated;
+}
+
 function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
   const merged: AppConfig = structuredClone(base);
 
@@ -261,8 +279,8 @@ function drawRichBlock(
   content: string,
   base: Required<Pick<BaseTextStyle, "x"|"y"|"fontFamily"|"fontSize"|"lineHeight"|"textAlign"|"color">> & { maxLines?: number; charsPerLine?: number; width?: number; }
 ) {
-  const charsPerLine = base.charsPerLine ?? 24;
-  const lineHeight = base.lineHeight ?? Math.round(base.fontSize * 1.4);
+  const charsPerLine = base.charsPerLine ?? 20;
+  const lineHeight = base.lineHeight ?? Math.round(base.fontSize * 1.8);
 
   const allLines = splitIntoInlineSafeLines(content, charsPerLine);
   const maxLines = base.maxLines ?? allLines.length;
@@ -342,7 +360,7 @@ function chooseAssets(pool: string[], n: number, preferDistinct = true): string[
   }
   const k = Math.min(n, shuffled.length);
   const out = shuffled.slice(0, k);
-  while (out.length < n) out.push(shuffled[out.length % shuffled.length]); // 池子不够 → 循环补齐
+  while (out.length < n) out.push(shuffled[out.length % shuffled.length]);
   return out;
 }
 
@@ -435,7 +453,8 @@ function resolveOverlay(base: OverlayConfig[] | undefined, patch?: Partial<Overl
 }
 
 export async function renderAll(request: RenderRequest): Promise<RenderResult> {
-  const appcfg = applyOverrides(config, request);
+  const config_env = applyEnvOverrides(config);
+  const appcfg = applyOverrides(config_env, request);
   registerAllFonts(appcfg);
 
   const { coverPath, textPath, endingPath, assets } =
@@ -479,7 +498,7 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
         textAlign: t.textAlign,
         color: t.color ?? "#000000",
         maxLines: 1,
-        charsPerLine: t.charsPerLine ?? 100,
+        charsPerLine: t.charsPerLine ?? 20,
         width: t.width,
       });
     }

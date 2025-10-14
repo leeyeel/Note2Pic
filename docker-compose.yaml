@@ -6,6 +6,10 @@ services:
     environment:
       PORT: "${PORT:-7810}"
       PUBLIC_BASE: "${PUBLIC_BASE:-http://host.docker.internal:${PORT:-7810}}"
+      TITLE_LINE1_FONT_SIZE: "${TITLE_LINE1_FONT_SIZE:-120}"
+      PAGE_FONT_SIZE: "{PAGE_FONT_SIZE:-42}"
+
+      
     ports:
       - "${PORT:-7810}:${PORT:-7810}"
     volumes:

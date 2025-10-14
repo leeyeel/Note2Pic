@@ -92,7 +92,7 @@ export const pageTemplate = {
   textAlign: "left" as const,
   maxLines: 10,
   enableInlineMarkup: true,
-  charsPerLine: 24,
+  charsPerLine: 20,
   text:''
 };
 
