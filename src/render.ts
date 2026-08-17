@@ -6,7 +6,6 @@ import { createCanvas, loadImage, registerFont, CanvasRenderingContext2D } from 
 import config, { AppConfig } from "./config";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../../");
-console.log(PROJECT_ROOT)
 
 type TextAlign = "left" | "center" | "right" | "justify";
 
@@ -23,6 +22,9 @@ interface BaseTextStyle {
   maxLines?: number;
   text?: string;
   enableInlineMarkup?: boolean;
+  minFontSize?: number;
+  maxFontSize?: number;
+  autoFit?: boolean;
   charsPerLine?: number;
 }
 
@@ -64,7 +66,11 @@ export interface RenderRequest {
 
   titleTexts?: string[];
 
-  pages?: string[]; 
+  /** Full article text. It is wrapped and split into as many images as needed. */
+  content?: string;
+
+  /** Legacy page input. Overflowing items continue on additional images. */
+  pages?: string[];
 
   overlayCover?: Partial<OverlayConfig>[];
   overlayPages?: Partial<OverlayConfig>[][];
@@ -83,17 +89,28 @@ function ensureDirSync(dir: string) {
 }
 
 function applyEnvOverrides(cfg: AppConfig): AppConfig {
-  const updated = { ...cfg };
+  const updated = structuredClone(cfg);
 
   const pageFontEnv = process.env.PAGE_FONT_SIZE;
   if (pageFontEnv && !isNaN(Number(pageFontEnv))) {
-    updated.pages = updated.pages.map(p => ({ ...p, fontSize: Number(pageFontEnv) })) as typeof updated.pages;
+    const fontSize = Number(pageFontEnv);
+    updated.pages = updated.pages.map((page) => ({
+      ...page,
+      fontSize,
+      minFontSize: fontSize,
+      maxFontSize: fontSize,
+      autoFit: false,
+    }));
   }
 
   const titleFontEnv = process.env.TITLE_LINE1_FONT_SIZE;
   if (titleFontEnv && !isNaN(Number(titleFontEnv))) {
     if (updated.title.length > 2 && updated.title[1]) {
-      updated.title[1].fontSize =  Number(titleFontEnv) ;
+      const fontSize = Number(titleFontEnv);
+      updated.title[1].fontSize = fontSize;
+      updated.title[1].minFontSize = fontSize;
+      updated.title[1].maxFontSize = fontSize;
+      updated.title[1].autoFit = false;
     }
   }
 
@@ -114,6 +131,9 @@ function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
   }
   if (req.overrides?.pages && Array.isArray(req.overrides.pages)) {
     req.overrides.pages.forEach((partial, i) => {
+      if (!merged.pages[i] && merged.pages[0]) {
+        merged.pages[i] = structuredClone(merged.pages[0]);
+      }
       if (merged.pages[i]) Object.assign(merged.pages[i], partial);
     });
   }
@@ -132,6 +152,9 @@ function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
 
   if (req.pages && Array.isArray(merged.pages)) {
     req.pages.forEach((txt, i) => {
+      if (!merged.pages[i] && merged.pages[0]) {
+        merged.pages[i] = structuredClone(merged.pages[0]);
+      }
       if (!merged.pages[i]) return;
       merged.pages[i].text = (txt ?? "").toString();
     });
@@ -140,94 +163,25 @@ function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
   return merged;
 }
 
-function splitIntoInlineSafeLines(content: string, charsPerLine: number): string[] {
-  const lines: string[] = [];
-  let i = 0;
-  let visible = 0;
-  let buf = "";
-  const openStack: string[] = [];
+type InlineSpan = { text: string; color?: string; fontSize?: number; };
+type RichLine = { spans: InlineSpan[]; width: number; height: number; };
 
-  const isOpenTag = (tag: string) => tag.startsWith("c:") || tag.startsWith("s:");
-  const isCloseTag = (tag: string) => tag === "/c" || tag === "/s";
-  const closeTokenFor = (openTok: string) => {
-    if (openTok.startsWith("c:")) return "</c>";
-    if (openTok.startsWith("s:")) return "</s>";
-    return "";
-  };
-  const openTokenToTag = (openTok: string) => `<${openTok}>`;
-
-  const flushLine = (force = false) => {
-    if (buf.length > 0 || force) {
-      for (let k = openStack.length - 1; k >= 0; k--) {
-        buf += closeTokenFor(openStack[k]);
-      }
-      lines.push(buf);
-      buf = openStack.map(openTok => openTokenToTag(openTok)).join("");
-      visible = 0;
-    }
-  };
-
-  while (i < content.length) {
-    const ch = content[i];
-
-    if (ch === "\n") {
-      flushLine(true);
-      i++;
-      continue;
-    }
-
-    if (ch === "<") {
-      const closeIdx = content.indexOf(">", i);
-      if (closeIdx !== -1) {
-        const rawTag = content.slice(i + 1, closeIdx).trim();
-        if (isOpenTag(rawTag)) {
-          buf += `<${rawTag}>`;
-          openStack.push(rawTag);
-          i = closeIdx + 1;
-          continue;
-        } else if (isCloseTag(rawTag)) {
-          buf += `<${rawTag}>`;
-          const expected = rawTag === "/c" ? "c:" : "s:";
-          for (let k = openStack.length - 1; k >= 0; k--) {
-            if (openStack[k].startsWith(expected)) {
-              openStack.splice(k, 1);
-              break;
-            }
-          }
-          i = closeIdx + 1;
-          continue;
-        }
-        const token = content.slice(i, closeIdx + 1);
-        if (visible + token.length > charsPerLine) {
-          flushLine();
-        }
-        buf += token;
-        visible += token.length;
-        i = closeIdx + 1;
-        continue;
-      }
-    }
-
-    if (visible + 1 > charsPerLine) {
-      flushLine();
-    }
-    buf += ch;
-    visible += 1;
-    i++;
-  }
-
-  if (buf.length > 0 || openStack.length > 0) {
-    for (let k = openStack.length - 1; k >= 0; k--) {
-      buf += closeTokenFor(openStack[k]);
-    }
-    lines.push(buf);
-  }
-
-  return lines;
+interface TextLayoutStyle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  minFontSize?: number;
+  maxFontSize?: number;
+  autoFit?: boolean;
+  lineHeight?: number;
+  maxLines?: number;
+  fontFamily: string;
+  textAlign: TextAlign;
+  color: string;
 }
 
-
-type InlineSpan = { text: string; color?: string; fontSize?: number; };
 function parseInline(text: string, base: { color: string; fontSize: number; }): InlineSpan[] {
   const spans: InlineSpan[] = [];
   const stack: { color?: string; fontSize?: number }[] = [ { color: base.color, fontSize: base.fontSize } ];
@@ -282,36 +236,227 @@ function normalizeNewlines(s: string): string {
     .replace(/\\n/g, "\n");  // 字面量 \n -> 真换行
 }
 
-function drawRichBlock(
-  ctx: CanvasRenderingContext2D,
-  content: string,
-  base: Required<Pick<BaseTextStyle, "x"|"y"|"fontFamily"|"fontSize"|"lineHeight"|"textAlign"|"color">> & { maxLines?: number; charsPerLine?: number; width?: number; }
-) {
-  content = normalizeNewlines(content);
-  const charsPerLine = base.charsPerLine ?? 20;
-  const lineHeight = base.lineHeight ?? Math.round(base.fontSize * 1.8);
+function setFont(ctx: CanvasRenderingContext2D, fontSize: number, fontFamily: string) {
+  ctx.font = `${fontSize}px "${fontFamily}"`;
+}
 
-  const allLines = splitIntoInlineSafeLines(content, charsPerLine);
-  const maxLines = base.maxLines ?? allLines.length;
-  const lines = allLines.slice(0, maxLines);
+function measureSpan(ctx: CanvasRenderingContext2D, span: InlineSpan, fontFamily: string, fallbackSize: number) {
+  setFont(ctx, span.fontSize ?? fallbackSize, fontFamily);
+  return ctx.measureText(span.text).width;
+}
 
-  for (let li = 0; li < lines.length; li++) {
-    const lineText = lines[li];
-    const spans = parseInline(lineText, { color: base.color, fontSize: base.fontSize });
+function addSpan(spans: InlineSpan[], span: InlineSpan, text: string) {
+  if (!text) return;
+  const last = spans[spans.length - 1];
+  if (last && last.color === span.color && last.fontSize === span.fontSize) {
+    last.text += text;
+  } else {
+    spans.push({ text, color: span.color, fontSize: span.fontSize });
+  }
+}
 
-    let cursorX = base.x;
-    const y = base.y + li * lineHeight;
+function splitTextTokens(text: string): string[] {
+  const tokens: string[] = [];
+  let asciiWord = "";
+  const flushWord = () => {
+    if (asciiWord) tokens.push(asciiWord);
+    asciiWord = "";
+  };
 
-    for (const sp of spans) {
-      ctx.font = `${sp.fontSize ?? base.fontSize}px "${base.fontFamily}"`;
-      ctx.fillStyle = sp.color ?? base.color;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.fillText(sp.text, cursorX, y);
-      const w = ctx.measureText(sp.text).width;
-      cursorX += w;
+  for (const char of Array.from(text)) {
+    if (char === "\n") {
+      flushWord();
+      tokens.push(char);
+    } else if (/\s/.test(char)) {
+      flushWord();
+      tokens.push(char);
+    } else if (/[A-Za-z0-9_@#%&+=:/?.-]/.test(char)) {
+      asciiWord += char;
+    } else {
+      flushWord();
+      tokens.push(char);
     }
   }
+  flushWord();
+  return tokens;
+}
+
+function lineHeightFor(spans: InlineSpan[], style: TextLayoutStyle, baseFontSize: number) {
+  const largest = spans.reduce((size, span) => Math.max(size, span.fontSize ?? baseFontSize), baseFontSize);
+  const ratio = style.lineHeight ? style.lineHeight / style.fontSize : 1.45;
+  return Math.ceil(Math.max(baseFontSize * ratio, largest * ratio));
+}
+
+function wrapRichText(
+  ctx: CanvasRenderingContext2D,
+  content: string,
+  style: TextLayoutStyle,
+  fontSize: number
+): RichLine[] {
+  const lines: RichLine[] = [];
+  let spans: InlineSpan[] = [];
+  let width = 0;
+  const maxWidth = Math.max(1, style.width);
+
+  const flush = (force = false) => {
+    if (spans.length > 0 || force) {
+      lines.push({
+        spans,
+        width,
+        height: lineHeightFor(spans, style, fontSize),
+      });
+      spans = [];
+      width = 0;
+    }
+  };
+
+  const append = (span: InlineSpan, text: string) => {
+    addSpan(spans, span, text);
+    width += measureSpan(ctx, { ...span, text }, style.fontFamily, fontSize);
+  };
+
+  const appendLongToken = (span: InlineSpan, token: string) => {
+    for (const char of Array.from(token)) {
+      const charWidth = measureSpan(ctx, { ...span, text: char }, style.fontFamily, fontSize);
+      if (spans.length > 0 && width + charWidth > maxWidth) flush();
+      append(span, char);
+    }
+  };
+
+  const takeLastCharacter = (): InlineSpan | undefined => {
+    const last = spans[spans.length - 1];
+    if (!last) return undefined;
+    const characters = Array.from(last.text);
+    const text = characters.pop();
+    if (!text) return undefined;
+
+    last.text = characters.join("");
+    if (!last.text) spans.pop();
+    width -= measureSpan(ctx, { ...last, text }, style.fontFamily, fontSize);
+    return { ...last, text };
+  };
+
+  for (const originalSpan of parseInline(normalizeNewlines(content), { color: style.color, fontSize })) {
+    const span = { ...originalSpan, fontSize: originalSpan.fontSize ?? fontSize };
+    for (const token of splitTextTokens(span.text)) {
+      if (token === "\n") {
+        flush(true);
+        continue;
+      }
+
+      const isWhitespace = /^\s+$/.test(token);
+      if (isWhitespace && spans.length === 0) continue;
+
+      const tokenWidth = measureSpan(ctx, { ...span, text: token }, style.fontFamily, fontSize);
+      if (width + tokenWidth <= maxWidth) {
+        append(span, token);
+      } else if (isWhitespace) {
+        flush();
+      } else if (/^[,.;:!?，。！？；：、】【》」』”’]$/.test(token) && spans.length > 0) {
+        // Keep closing punctuation with the preceding character instead of
+        // producing a visually awkward one-character punctuation line.
+        const previousCharacter = takeLastCharacter();
+        flush();
+        if (previousCharacter) append(previousCharacter, previousCharacter.text);
+        append(span, token);
+      } else if (spans.length > 0) {
+        flush();
+        if (tokenWidth <= maxWidth) append(span, token);
+        else appendLongToken(span, token);
+      } else {
+        appendLongToken(span, token);
+      }
+    }
+  }
+
+  flush();
+  return lines;
+}
+
+function totalHeight(lines: RichLine[]) {
+  return lines.reduce((height, line) => height + line.height, 0);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function chooseTextLayout(ctx: CanvasRenderingContext2D, content: string, style: TextLayoutStyle) {
+  const min = Math.max(1, Math.round(style.minFontSize ?? style.fontSize));
+  const max = Math.max(min, Math.round(style.maxFontSize ?? style.fontSize));
+  const preferred = clamp(Math.round(style.fontSize), min, max);
+  const fits = (lines: RichLine[]) => {
+    if (lines.length === 0) return true;
+    const lastLine = lines[lines.length - 1];
+    const lastLineCharacters = Array.from(lastLine.spans.map((span) => span.text).join(""))
+      .filter((character) => !/\s/.test(character)).length;
+    const hasOrphanedLastLine =
+      lines.length > 1 && (lastLine.width < style.width * 0.13 || lastLineCharacters <= 2);
+    return (
+      totalHeight(lines) <= style.height &&
+      (!style.maxLines || lines.length <= style.maxLines) &&
+      !hasOrphanedLastLine
+    );
+  };
+
+  if (style.autoFit !== false) {
+    for (let size = max; size >= min; size--) {
+      const lines = wrapRichText(ctx, content, style, size);
+      if (fits(lines)) return { fontSize: size, lines };
+    }
+  }
+
+  return { fontSize: preferred, lines: wrapRichText(ctx, content, style, preferred) };
+}
+
+function paginateLines(lines: RichLine[], style: TextLayoutStyle): RichLine[][] {
+  if (lines.length === 0) return [];
+
+  const pages: RichLine[][] = [];
+  let page: RichLine[] = [];
+  let pageHeight = 0;
+  const maxLines = style.maxLines ?? Number.POSITIVE_INFINITY;
+
+  for (const line of lines) {
+    const exceedsHeight = page.length > 0 && pageHeight + line.height > style.height;
+    const exceedsLineCount = page.length >= maxLines;
+    if (exceedsHeight || exceedsLineCount) {
+      pages.push(page);
+      page = [];
+      pageHeight = 0;
+    }
+    page.push(line);
+    pageHeight += line.height;
+  }
+  if (page.length > 0) pages.push(page);
+  return pages;
+}
+
+function drawRichLines(ctx: CanvasRenderingContext2D, lines: RichLine[], style: TextLayoutStyle) {
+  let y = style.y;
+  for (const line of lines) {
+    let cursorX = style.x;
+    if (style.textAlign === "center") cursorX += Math.max(0, (style.width - line.width) / 2);
+    if (style.textAlign === "right") cursorX += Math.max(0, style.width - line.width);
+
+    for (const span of line.spans) {
+      const size = span.fontSize ?? style.fontSize;
+      setFont(ctx, size, style.fontFamily);
+      ctx.fillStyle = span.color ?? style.color;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(span.text, cursorX, y);
+      cursorX += ctx.measureText(span.text).width;
+    }
+    y += line.height;
+  }
+}
+
+function drawRichBlock(ctx: CanvasRenderingContext2D, content: string, style: TextLayoutStyle) {
+  const layout = chooseTextLayout(ctx, content, style);
+  const firstPage = paginateLines(layout.lines, style)[0] ?? [];
+  drawRichLines(ctx, firstPage, { ...style, fontSize: layout.fontSize });
+  return layout.fontSize;
 }
 
 async function loadTemplateImages(templates: TemplatesConfig, templateName?: string) {
@@ -455,9 +600,10 @@ function cloneOverlay(base: OverlayConfig[] | undefined, patch?: Partial<Overlay
 }
 
 function resolveOverlay(base: OverlayConfig[] | undefined, patch?: Partial<OverlayConfig>[]): OverlayConfig[] | undefined {
-  if (!patch || patch.length === 0) {
+  if (!patch) {
     return cloneOverlay(base);
   }
+  if (patch.length === 0) return [];
   return cloneOverlay(base, patch);
 }
 
@@ -480,8 +626,8 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
   const textBase  = await loadImage(textPath);
   const endingBase= await loadImage(endingPath);
 
-  const W = appcfg.image.width;
-  const H = appcfg.image.height;
+  const W = appcfg.image.width || textBase.width;
+  const H = appcfg.image.height || textBase.height;
 
   //title
   {
@@ -494,21 +640,23 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
     await drawOverlays(ctx, W, H, layers, assets);
 
     const titleTexts = appcfg.title;
-    for (let i = 0;  i < titleTexts.length; i++) {
+    for (let i = 0; i < titleTexts.length; i++) {
       const t = appcfg.title[i];
       if (!t) continue;
-      const lineHeight = t.lineHeight ?? Math.round((t.fontSize ?? 36) * 1.4);
       drawRichBlock(ctx, t.text || "", {
         x: t.x,
         y: t.y,
         fontFamily: t.fontFamily,
         fontSize: t.fontSize ?? 36,
-        lineHeight,
+        minFontSize: t.minFontSize,
+        maxFontSize: t.maxFontSize,
+        autoFit: t.autoFit,
+        lineHeight: t.lineHeight,
         textAlign: t.textAlign,
         color: t.color ?? "#000000",
         maxLines: 1,
-        charsPerLine: t.charsPerLine ?? 20,
-        width: t.width,
+        width: Math.max(1, Math.min(t.width ?? W - t.x - 80, W - t.x)),
+        height: Math.max(1, Math.min(t.height ?? t.fontSize * 1.6, H - t.y)),
       });
     }
 
@@ -519,35 +667,49 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
   //text
   const textOutputs: string[] = [];
   {
-    const pages = appcfg.pages;
-    const pageCount = Math.max(1, Math.min(pages.length || 1, 6));
-    for (let p = 0; p < pageCount; p++) {
-      const ps = appcfg.pages[p];
-      if (!ps.text) continue;
-      const canvas = createCanvas(W, H);
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(textBase, 0, 0, W, H);
-      const pageOver = request.overlayPages?.[p];
-      const layers = resolveOverlay(appcfg.overlay, pageOver);
-      await drawOverlays(ctx, W, H, layers, assets);
+    const hasContent = typeof request.content === "string" && request.content.trim().length > 0;
+    const sources = hasContent
+      ? [{ text: request.content!, style: appcfg.pages[0] }]
+      : appcfg.pages
+          .filter((page) => page?.text?.trim())
+          .map((page) => ({ text: page.text!, style: page }));
 
-      const lineHeight = ps.lineHeight ?? Math.round((ps.fontSize ?? 32) * 1.4);
-      drawRichBlock(ctx, ps.text, {
+    for (const source of sources) {
+      const ps = source.style;
+      if (!ps) continue;
+
+      const style: TextLayoutStyle = {
         x: ps.x,
         y: ps.y,
+        width: Math.max(1, Math.min(ps.width ?? W - ps.x - 80, W - ps.x)),
+        height: Math.max(1, Math.min(ps.height ?? H - ps.y - 80, H - ps.y)),
         fontFamily: ps.fontFamily,
         fontSize: ps.fontSize ?? 32,
-        lineHeight,
+        minFontSize: ps.minFontSize,
+        maxFontSize: ps.maxFontSize,
+        autoFit: ps.autoFit,
+        lineHeight: ps.lineHeight,
         textAlign: ps.textAlign,
         color: ps.color ?? "#000000",
         maxLines: ps.maxLines,
-        charsPerLine: ps.charsPerLine ?? 24,
-        width: ps.width,
-      });
+      };
+      const measureCanvas = createCanvas(1, 1);
+      const layout = chooseTextLayout(measureCanvas.getContext("2d"), source.text, style);
+      const pageGroups = paginateLines(layout.lines, style);
 
-      const out = path.join(outDir, `text_${p + 1}.png`);
-      await fs.writeFile(out, canvas.toBuffer("image/png"));
-      textOutputs.push(out);
+      for (const pageLines of pageGroups) {
+        const canvas = createCanvas(W, H);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(textBase, 0, 0, W, H);
+        const pageOver = request.overlayPages?.[textOutputs.length];
+        const layers = resolveOverlay(appcfg.overlay, pageOver);
+        await drawOverlays(ctx, W, H, layers, assets);
+        drawRichLines(ctx, pageLines, { ...style, fontSize: layout.fontSize });
+
+        const out = path.join(outDir, `text_${textOutputs.length + 1}.png`);
+        await fs.writeFile(out, canvas.toBuffer("image/png"));
+        textOutputs.push(out);
+      }
     }
   }
 
@@ -571,4 +733,3 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
     outputDir: outDir,
   };
 }
-

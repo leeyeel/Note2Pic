@@ -34,24 +34,18 @@ export interface BaseTextStyle {
   maxLines?: number;
   text?: string;
   enableInlineMarkup?: boolean;
+  /** Smallest size used when automatic fitting needs to shrink text. */
+  minFontSize?: number;
+  /** Largest size used when automatic fitting has room to grow text. */
+  maxFontSize?: number;
+  /** Set to false only when a caller needs to keep an exact font size. */
+  autoFit?: boolean;
+  /**
+   * Legacy character-based wrapping setting. New layouts measure real glyph
+   * widths, so this is retained only for backwards-compatible input.
+   */
   charsPerLine?: number;
 }
-
-type TitleArray =
-  | []
-  | [BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle, BaseTextStyle];
-
-type PagesArray =
-  | []
-  | [BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle, BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle]
-  | [BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle, BaseTextStyle];
 
 export interface OverlayConfig {
   enable: boolean;
@@ -63,8 +57,6 @@ export interface OverlayConfig {
   alphaRange: [number, number];
 }
 
-type OverlayArray = | [] | [OverlayConfig]
-
 export interface ImageConfig {
   width: number;
   height: number;
@@ -74,26 +66,26 @@ export interface AppConfig {
   fonts: Record<string, FontDef>;
   templates: TemplatesConfig;
   output: OutputConfig;
-  title: TitleArray;
-  pages: PagesArray;
-  overlay: OverlayArray;
+  title: BaseTextStyle[];
+  pages: BaseTextStyle[];
+  overlay: OverlayConfig[];
   image: ImageConfig;
 }
 
 export const pageTemplate = {
   x: 100,
   y: 500,
-  width: 1080,
-  height: 1350,
-  fontSize: 36,
-  lineHeight: 45,
+  width: 880,
+  height: 670,
+  fontSize: 42,
+  minFontSize: 32,
+  maxFontSize: 46,
+  autoFit: true,
   color: "#000000",
   fontFamily: "Yozai-Regular",
   textAlign: "left" as const,
-  maxLines: 10,
   enableInlineMarkup: true,
-  charsPerLine: 20,
-  text:''
+  text: "",
 };
 
 export const overlayTemplate:OverlayConfig = {
@@ -144,6 +136,9 @@ const config = {
       color: "#000000",
       fontFamily: "Yozai-Regular",
       textAlign: "left",
+      width: 580,
+      minFontSize: 46,
+      autoFit: true,
       text: "",
     },
     {
@@ -153,6 +148,9 @@ const config = {
       color: "#000000",
       fontFamily: "Yozai-Medium",
       textAlign: "left",
+      width: 680,
+      minFontSize: 56,
+      autoFit: true,
       text: "hello",
     },
     {
@@ -162,6 +160,9 @@ const config = {
       color: "#000000",
       fontFamily: "Yozai-Regular",
       textAlign: "left",
+      width: 580,
+      minFontSize: 46,
+      autoFit: true,
       text: "world!",
     },
   ],
@@ -182,9 +183,8 @@ const config = {
 
   image: {
     width: 1080,
-    height: 1350,
+    height: 1440,
   },
 } satisfies AppConfig;
 
 export default config;
-

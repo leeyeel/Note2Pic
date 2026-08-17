@@ -38,17 +38,33 @@ const TitleSchema = z.object({
 
 const PageSchema = z.object({
   text: z.string().describe(
-    "本页正文内容。建议每行≤20个汉字，工具会在合适位置自动换行；可使用内联样式标记关键词（示例：<c:#ff4d4f>重点词</c> 或 <s:70>加大字号</s>）。"
+    "兼容旧调用的单段正文。无需手动控制每行字数；内容超出一页时会自动续页。可使用内联样式标记关键词（示例：<c:#ff4d4f>重点词</c> 或 <s:70>加大字号</s>）。"
   ),
-}).describe("正文段落：按行展示（需要换行，每行≤20汉字），内容最好在6-10行之间。支持简单内联样式以增强可读性。");
+}).describe("兼容旧版的分段正文输入。新调用优先使用 content 直接传入完整文案。");
 
 const MinimalRenderInputSchema = z.object({
     titleDir: z.string().min(1, "titleDir 不能为空,会作为输出图片的目录名,不要有空格"),
     templateName: z.string().optional().default("default"),
-    title: TitleSchema.strict(),
-    pages: z.array(PageSchema).min(1).max(7),
+    headline: z.string().min(1).optional().describe(
+      "封面主标题。最简单的标题输入方式，系统会放入封面的主标题区域并自动缩放。"
+    ),
+    title: TitleSchema.strict().optional().describe(
+      "可选的三段式标题输入。需要更细致地控制封面三行文案时使用；否则传 headline 即可。"
+    ),
+    content: z.string().min(1).optional().describe(
+      "完整正文文案。直接粘贴全文即可，系统会按实际字体宽度自动换行、在可用区域内选择字号，并自动生成所需的正文页。"
+    ),
+    pages: z.array(PageSchema).min(1).optional().describe(
+      "旧版分页面输入，仍受支持。每段若超过一页会自动拆分，推荐改用 content。"
+    ),
     disableOverlay: z.boolean().optional(),
-}).strict();
+}).strict().refine((data) => Boolean(data.content || data.pages?.length), {
+    message: "content 或 pages 至少提供一个",
+    path: ["content"],
+}).refine((data) => Boolean(data.headline || data.title), {
+    message: "headline 或 title 至少提供一个",
+    path: ["headline"],
+});
 
 //advanced schema
 const FontDefSchema = z.object({
@@ -153,7 +169,7 @@ export function createMCPServer() {
     const tools: Tool[] = [
       {
         name: ToolName.GENERATE_SIMPLE,
-        description: "生成适配小红书（目标用户：宝妈）的图片海报：三段式标题（1≤10汉字、2≤7汉字、3≤10汉字，重点在第二段）+ 正文自动换行（每行≤24汉字, 每页最多10行，总共7页内容），标题及征文均支持内联样式高亮关键词（颜色/字号）。返回HTTP下载链接。",
+        description: "生成适配小红书（目标用户：宝妈）的图片海报。传入 headline 和完整正文 content 即可；正文会按真实字宽自动换行、在模板文字区内自动选择字号，并持续分页直到全文排完。需要细调封面时可改传三段式 title。标题和正文支持内联样式高亮关键词（颜色/字号）。返回 HTTP 下载链接。",
         inputSchema: zodToJsonSchema(MinimalRenderInputSchema) as ToolInput,
       },
     ];
@@ -164,18 +180,16 @@ export function createMCPServer() {
     const { name, arguments: args } = request.params;
     if (name === ToolName.GENERATE_SIMPLE) {
       const input = MinimalRenderInputSchema.parse(args);
-      const {titleDir, templateName = "default", title, pages, disableOverlay} = input;
-      const titleTexts = [
-        title.line1 ?? "",
-        title.line2 ?? "",
-        title.line3 ?? "",
-      ];
-      const pageTexts = pages.map(p => p.text ?? "");
+      const {titleDir, templateName = "default", headline, title, content, pages, disableOverlay} = input;
+      const titleTexts = title
+        ? [title.line1 ?? "", title.line2 ?? "", title.line3 ?? ""]
+        : ["", headline ?? "", ""];
       const request: any = {
         titleDir,
         templateName,
-        titleTexts, 
-        pages: pageTexts,
+        titleTexts,
+        content,
+        pages: pages?.map(p => p.text ?? ""),
       };
       if (disableOverlay === true) {
         request.overlayCover = [];
