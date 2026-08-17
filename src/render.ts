@@ -57,12 +57,14 @@ export interface RenderRequest {
 
   templateName?: string;
 
-  overrides?: Partial<Pick<AppConfig,
-    "output" | "image" | "templates">> & {
-      title?: Partial<BaseTextStyle>[];
-      pages?: Partial<BaseTextStyle>[];
-      overlay?: Partial<OverlayConfig>[];
-    };
+  overrides?: {
+    output?: Partial<AppConfig["output"]>;
+    image?: Partial<AppConfig["image"]>;
+    templates?: Partial<AppConfig["templates"]>;
+    title?: Partial<BaseTextStyle>[];
+    pages?: Partial<BaseTextStyle>[];
+    overlay?: Partial<OverlayConfig>[];
+  };
 
   titleTexts?: string[];
 
@@ -82,6 +84,18 @@ export interface RenderResult {
   texts: string[];
   ending: string;
   outputDir: string;
+}
+
+export interface RenderValidation {
+  template: {
+    name: string;
+    directory: string;
+    assets: string[];
+  };
+  fonts: Array<{
+    name: string;
+    path: string;
+  }>;
 }
 
 function ensureDirSync(dir: string) {
@@ -161,6 +175,10 @@ function applyOverrides(base: AppConfig, req: RenderRequest): AppConfig {
   }
 
   return merged;
+}
+
+function resolveAppConfig(request: RenderRequest): AppConfig {
+  return applyOverrides(applyEnvOverrides(config), request);
 }
 
 type InlineSpan = { text: string; color?: string; fontSize?: number; };
@@ -464,7 +482,15 @@ async function loadTemplateImages(templates: TemplatesConfig, templateName?: str
   const baseDirAbs = path.isAbsolute(templates.baseDir)
     ? templates.baseDir
     : path.resolve(PROJECT_ROOT, templates.baseDir);
-  const base = path.join(baseDirAbs, name);
+  if (!name.trim() || path.isAbsolute(name)) {
+    throw new Error("templateName must be a non-empty relative directory");
+  }
+  const templateRoot = path.resolve(baseDirAbs);
+  const base = path.resolve(templateRoot, name);
+  const relative = path.relative(templateRoot, base);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("templateName must stay within the template directory");
+  }
   const coverPath = path.join(base, "cover.png");
   const textPath = path.join(base, "text.png");
   const endingPath = path.join(base, "ending.png");
@@ -498,6 +524,50 @@ function registerAllFonts(appcfg: AppConfig) {
                 console.warn(`Font register warning for ${absPath}:`, (e as Error).message);
             }
     });
+}
+
+function resolveFontPath(font: AppConfig["fonts"][string]) {
+  return path.isAbsolute(font.path) ? font.path : path.resolve(PROJECT_ROOT, font.path);
+}
+
+function resolveOutputDirectory(outputBase: string, titleDir: string) {
+  if (!titleDir.trim() || path.isAbsolute(titleDir)) {
+    throw new Error("titleDir must be a non-empty relative directory");
+  }
+
+  const base = path.resolve(outputBase);
+  const outputDirectory = path.resolve(base, titleDir);
+  const relative = path.relative(base, outputDirectory);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("titleDir must stay within the output directory");
+  }
+  return outputDirectory;
+}
+
+export async function validateRenderRequest(request: RenderRequest): Promise<RenderValidation> {
+  const appcfg = resolveAppConfig(request);
+  const templates = await loadTemplateImages(appcfg.templates, request.templateName);
+  const fonts = Object.entries(appcfg.fonts).map(([name, font]) => ({
+    name,
+    path: resolveFontPath(font),
+  }));
+  const missingFonts = await Promise.all(fonts.map(async (font) => {
+    const stat = await fs.stat(font.path).catch(() => null);
+    return stat?.isFile() ? undefined : font.path;
+  }));
+  const missing = missingFonts.filter((font): font is string => Boolean(font));
+  if (missing.length > 0) {
+    throw new Error(`Font file missing: ${missing.join(", ")}`);
+  }
+
+  return {
+    template: {
+      name: request.templateName ?? appcfg.templates.defaultName,
+      directory: path.dirname(templates.coverPath),
+      assets: templates.assets,
+    },
+    fonts,
+  };
 }
 
 function chooseAssets(pool: string[], n: number, preferDistinct = true): string[] {
@@ -608,8 +678,7 @@ function resolveOverlay(base: OverlayConfig[] | undefined, patch?: Partial<Overl
 }
 
 export async function renderAll(request: RenderRequest): Promise<RenderResult> {
-  const config_env = applyEnvOverrides(config);
-  const appcfg = applyOverrides(config_env, request);
+  const appcfg = resolveAppConfig(request);
   registerAllFonts(appcfg);
 
   const { coverPath, textPath, endingPath, assets } =
@@ -619,7 +688,7 @@ export async function renderAll(request: RenderRequest): Promise<RenderResult> {
   ? appcfg.output.directory
   : path.resolve(PROJECT_ROOT, appcfg.output.directory);
 
-  const outDir = path.join(outputBase, request.titleDir);
+  const outDir = resolveOutputDirectory(outputBase, request.titleDir);
   ensureDirSync(outDir);
 
   const coverBase = await loadImage(coverPath);

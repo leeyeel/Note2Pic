@@ -1,14 +1,20 @@
 {
   "name": "note2pic-renderer",
   "version": "1.0.0",
-  "description": "Simple HTTP service that composes images and text using node-canvas based on template and config.ts",
-  "main": "dist/app.js",
+  "description": "CLI-first renderer that composes paginated images from copy using node-canvas",
+  "main": "dist/src/cli.js",
+  "bin": {
+    "note2pic": "dist/src/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/app.js",
     "dev": "ts-node-dev --respawn --transpile-only app.ts",
     "clean": "rimraf dist",
-    "mcp": "node dist/mcp/streamableHttp.js"
+    "mcp": "node dist/mcp/streamableHttp.js",
+    "cli": "node dist/src/cli.js",
+    "render": "node dist/src/cli.js render",
+    "validate": "node dist/src/cli.js validate"
   },
   "keywords": [
     "canvas",
@@ -19,7 +25,7 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=20.10.0"
+    "node": ">=20.10.0 <22"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.1",

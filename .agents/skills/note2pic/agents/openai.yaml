@@ -1,0 +1,4 @@
+interface:
+  display_name: "Note2Pic"
+  short_description: "Convert copy into paginated social images"
+  default_prompt: "Use $note2pic to turn this Chinese copy into a Xiaohongshu image set."

@@ -2,7 +2,33 @@
 
 将封面标题和完整正文转换为图片。正文无需预先分成每页，也无需控制每行字数。
 
-## 最简 MCP 调用
+## CLI
+
+CLI 是默认入口。准备请求 JSON 后执行：
+
+```sh
+nvm use
+npm run build
+npm run render -- --input request.json --pretty
+```
+
+项目使用 Node 20。`canvas@2.11.2` 不支持 Node 22 的预编译运行时。
+
+也可以从标准输入读取：
+
+```sh
+echo '{"titleDir":"homework-habit","headline":"孩子写作业总拖延","content":"先不要急着催。"}' | npm run render -- --input -
+```
+
+默认产物位于 `output/<titleDir>/`。`render` 在标准输出返回 JSON manifest；使用 `validate` 可在不生成图片时检查模板和字体：
+
+```sh
+npm run validate -- --input request.json --template-root template --pretty
+```
+
+`titleDir` 是文件目录标识，只能使用字母、数字、`_` 和 `-`，且必须以字母或数字开头。`--output-dir` 与 `--template-root` 可以覆盖默认路径。
+
+## MCP 兼容入口
 
 `generate_simple` 只需要提供 `headline` 和 `content`：
 

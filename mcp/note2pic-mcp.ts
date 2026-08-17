@@ -11,6 +11,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import path from "node:path";
 import config from "../src/config";
 import { renderAll } from "../src/render";
+import { SimpleRenderInputSchema, toRenderRequest } from "../src/schema";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../../");
 export const outputBase = path.isAbsolute(config.output.directory)
@@ -20,51 +21,6 @@ export const PUBLIC_BASE = process.env.PUBLIC_BASE ?? `http://localhost:${proces
 
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
-
-//simple schema
-const TitleSchema = z.object({
-  line1: z.string().describe(
-    "标题第1段（≤10个汉字）。用于引入，不宜过长。建议简短有力。可使用内联语法更改颜色及字号:（示例：<c:#ff4d4f>重点词</c> 或 <s:70>加大字号</s>）"
-  ),
-  line2: z.string().describe(
-    "标题第2段（重点，≤7个汉字）。整条标题视觉重心放在此处，建议突出利益点/痛点。可使用内联语法更改颜色及字号:（示例：<c:#ff4d4f>重点词</c> 或 <s:70>加大字号</s>）"
-  ),
-  line3: z.string().describe(
-    "标题第3段（≤10个汉字）。用于收束或补充信息，可加入行动号召。可使用内联语法更改颜色及字号:（示例：<c:#ff4d4f>重点词</c> 或 <s:70>加大字号</s>）"
-  ),
-}).describe(
-  "小红书三段式标题规范：第一段≤10汉字、第二段≤7汉字（重点）、第三段≤10汉字；整体风格和语气应贴合小红书的宝妈群体，亲切、有同理心、可读性强。"
-);
-
-const PageSchema = z.object({
-  text: z.string().describe(
-    "兼容旧调用的单段正文。无需手动控制每行字数；内容超出一页时会自动续页。可使用内联样式标记关键词（示例：<c:#ff4d4f>重点词</c> 或 <s:70>加大字号</s>）。"
-  ),
-}).describe("兼容旧版的分段正文输入。新调用优先使用 content 直接传入完整文案。");
-
-const MinimalRenderInputSchema = z.object({
-    titleDir: z.string().min(1, "titleDir 不能为空,会作为输出图片的目录名,不要有空格"),
-    templateName: z.string().optional().default("default"),
-    headline: z.string().min(1).optional().describe(
-      "封面主标题。最简单的标题输入方式，系统会放入封面的主标题区域并自动缩放。"
-    ),
-    title: TitleSchema.strict().optional().describe(
-      "可选的三段式标题输入。需要更细致地控制封面三行文案时使用；否则传 headline 即可。"
-    ),
-    content: z.string().min(1).optional().describe(
-      "完整正文文案。直接粘贴全文即可，系统会按实际字体宽度自动换行、在可用区域内选择字号，并自动生成所需的正文页。"
-    ),
-    pages: z.array(PageSchema).min(1).optional().describe(
-      "旧版分页面输入，仍受支持。每段若超过一页会自动拆分，推荐改用 content。"
-    ),
-    disableOverlay: z.boolean().optional(),
-}).strict().refine((data) => Boolean(data.content || data.pages?.length), {
-    message: "content 或 pages 至少提供一个",
-    path: ["content"],
-}).refine((data) => Boolean(data.headline || data.title), {
-    message: "headline 或 title 至少提供一个",
-    path: ["headline"],
-});
 
 //advanced schema
 const FontDefSchema = z.object({
@@ -170,7 +126,7 @@ export function createMCPServer() {
       {
         name: ToolName.GENERATE_SIMPLE,
         description: "生成适配小红书（目标用户：宝妈）的图片海报。传入 headline 和完整正文 content 即可；正文会按真实字宽自动换行、在模板文字区内自动选择字号，并持续分页直到全文排完。需要细调封面时可改传三段式 title。标题和正文支持内联样式高亮关键词（颜色/字号）。返回 HTTP 下载链接。",
-        inputSchema: zodToJsonSchema(MinimalRenderInputSchema) as ToolInput,
+        inputSchema: zodToJsonSchema(SimpleRenderInputSchema) as ToolInput,
       },
     ];
     return { tools };
@@ -179,24 +135,8 @@ export function createMCPServer() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     if (name === ToolName.GENERATE_SIMPLE) {
-      const input = MinimalRenderInputSchema.parse(args);
-      const {titleDir, templateName = "default", headline, title, content, pages, disableOverlay} = input;
-      const titleTexts = title
-        ? [title.line1 ?? "", title.line2 ?? "", title.line3 ?? ""]
-        : ["", headline ?? "", ""];
-      const request: any = {
-        titleDir,
-        templateName,
-        titleTexts,
-        content,
-        pages: pages?.map(p => p.text ?? ""),
-      };
-      if (disableOverlay === true) {
-        request.overlayCover = [];
-        request.overlayPages = [];
-        request.overlayEnding = [];
-      }
-      const result = await renderAll(request);
+      const input = SimpleRenderInputSchema.parse(args);
+      const result = await renderAll(toRenderRequest(input));
       const files = [
         { kind: "cover",  abs: result.cover },
         ...result.texts.map((p, i) => ({ kind: `text_${i+1}`, abs: p })),
